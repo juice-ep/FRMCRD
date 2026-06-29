@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FRMCRD</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/exif-js/2.3.0/exif.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #080808;
+      --white:   #efefef;
+      --light:   #aaaaaa;
+      --mid:     #777777;
+      --dim:     #4a4a4a;
+      --faint:   #2c2c2c;
+      --border:  #272727;
+      --in-bg:   #111111;
+      --accent:  #c8a96e;
+      --font: 'SF Mono','Fira Code','Cascadia Code','Roboto Mono','Courier New',monospace;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--white);
+      font-family: var(--font);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 36px 20px 72px;
+    }
+
+    /* ── HEADER ── */
+    .hdr {
+      width: 100%; max-width: 420px;
+      display: flex; justify-content: space-between; align-items: baseline;
+      margin-bottom: 40px;
+    }
+    .hdr-title { font-size: 10px; letter-spacing: 0.26em; font-weight: 700; }
+    .hdr-sub   { font-size: 7.5px; letter-spacing: 0.18em; color: var(--mid); }
+
+    /* ── DROP ZONE ── */
+    #drop {
+      width: 100%; max-width: 420px;
+      border: 1px solid var(--border);
+      padding: 68px 24px; text-align: center; cursor: pointer;
+      position: relative; transition: border-color 0.2s;
+    }
+    #drop:hover { border-color: #3a3a3a; }
+    #drop.over  { border-color: var(--light); }
+    #drop input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+    .drop-icon { font-size: 22px; color: var(--faint); margin-bottom: 16px; display: block; }
+    .drop-lbl  { font-size: 9px; letter-spacing: 0.22em; color: var(--mid); }
+    .drop-sub  { margin-top: 10px; font-size: 7px; letter-spacing: 0.14em; color: var(--dim); }
+
+    /* ── EXIF TAGS ── */
+    #exif-bar {
+      display: none; flex-wrap: wrap; gap: 4px;
+      width: 100%; max-width: 420px; margin-top: 14px;
+    }
+    .xtag { border: 1px solid var(--border); padding: 3px 8px; font-size: 7px; letter-spacing: 0.12em; color: var(--light); }
+    .xtag b { color: var(--mid); font-weight: 400; margin-right: 4px; }
+
+    /* ── INPUT FIELDS ── */
+    #fields {
+      display: none; flex-direction: column; gap: 8px;
+      width: 100%; max-width: 420px; margin-top: 16px;
+    }
+    .row { display: flex; gap: 8px; }
+    .fld { flex: 1; display: flex; flex-direction: column; gap: 5px; }
+    .fld-label-row { display: flex; justify-content: space-between; align-items: center; }
+    .fld label { font-size: 7px; letter-spacing: 0.22em; color: var(--mid); }
+    .fld-badge { font-size: 6.5px; letter-spacing: 0.14em; color: var(--accent); display: none; }
+    .fld input {
+      background: var(--in-bg); border: 1px solid var(--border);
+      color: var(--white); font-family: var(--font);
+      font-size: 9px; letter-spacing: 0.1em; padding: 9px 11px;
+      outline: none; width: 100%; transition: border-color 0.15s;
+    }
+    .fld input:focus        { border-color: var(--mid); }
+    .fld input::placeholder { color: var(--faint); }
+    .fld input.signed       { border-color: #3a3020; }
+
+    /* ── GPS BUTTONS (below location field) ── */
+    #gps-btns {
+      display: none;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-top: 2px;
+    }
+    .gps-src-btn {
+      background: none; border: 1px solid var(--border);
+      color: var(--light); font-family: var(--font);
+      font-size: 7px; letter-spacing: 0.14em; padding: 4px 10px;
+      cursor: pointer; transition: all 0.15s; white-space: nowrap;
+    }
+    .gps-src-btn:hover    { border-color: var(--mid); color: var(--white); }
+    .gps-src-btn:disabled { color: var(--dim); border-color: var(--faint); cursor: default; }
+
+    /* ── GPS CONFIRM / STATUS (shared, below gps-btns) ── */
+    #gps-panel {
+      display: none;
+      width: 100%; max-width: 420px;
+      border: 1px solid var(--border);
+      padding: 10px 12px;
+      margin-top: 2px;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .panel-notice {
+      font-size: 7px; letter-spacing: 0.11em; color: var(--mid); line-height: 1.8;
+    }
+    .panel-notice a { color: var(--light); }
+    .panel-notice code {
+      display: block; margin-top: 6px; padding: 5px 8px;
+      background: #0e0e0e; border: 1px solid var(--border);
+      color: var(--light); font-family: var(--font);
+      font-size: 7px; letter-spacing: 0.1em; user-select: all;
+    }
+    .panel-row { display: flex; gap: 6px; }
+    .p-btn {
+      background: none; border: 1px solid var(--border);
+      color: var(--light); font-family: var(--font);
+      font-size: 7px; letter-spacing: 0.16em; padding: 5px 12px;
+      cursor: pointer; transition: all 0.15s;
+    }
+    .p-btn:hover    { border-color: var(--mid); color: var(--white); }
+    .p-btn.confirm  { border-color: var(--dim); color: var(--white); }
+    .p-btn.confirm:hover { background: var(--white); color: #000; }
+    #panel-status { font-size: 7px; letter-spacing: 0.12em; color: var(--mid); }
+
+    /* ── CARD ── */
+    #card-wrap { display: none; width: 100%; max-width: 420px; margin-top: 20px; }
+    #share-card { width: 100%; background: #000; }
+
+    .ribbon {
+      background: #000; padding: 9px 13px;
+      display: flex; justify-content: space-between; align-items: center; gap: 12px;
+    }
+    .ribbon-top { border-bottom: 1px solid #141414; }
+    .ribbon-bot { border-top:    1px solid #141414; }
+
+    /* White, bold text for the saved card output */
+    .r-ts {
+      font-size: 7.5px; letter-spacing: 0.13em;
+      color: #ffffff; font-weight: 700;
+      white-space: nowrap;
+    }
+    .r-loc {
+      font-size: 7.5px; letter-spacing: 0.13em;
+      color: #ffffff; font-weight: 700;
+      text-align: right; white-space: nowrap;
+      overflow: hidden; text-overflow: ellipsis; max-width: 60%;
+      font-family: 'SF Mono','Fira Code','Roboto Mono','Courier New',
+                   'Hiragino Sans','Noto Sans CJK JP','Malgun Gothic',
+                   'Arial Unicode MS', monospace;
+    }
+
+    #card-img { display: block; width: 100%; height: auto; }
+
+    .r-specs { display: flex; align-items: center; flex-wrap: wrap; gap: 0; }
+    .spec { font-size: 7.5px; letter-spacing: 0.13em; color: #ffffff; font-weight: 700; white-space: nowrap; }
+    .sep  { font-size: 7.5px; color: #444; margin: 0 7px; font-weight: 400; }
+
+    /* ── ACTIONS ── */
+    #actions { display: none; width: 100%; max-width: 420px; margin-top: 10px; gap: 8px; }
+    .btn {
+      flex: 1; background: transparent; border: 1px solid var(--border);
+      color: var(--light); font-family: var(--font);
+      font-size: 8px; letter-spacing: 0.22em; padding: 12px 8px; cursor: pointer;
+      transition: all 0.15s;
+    }
+    .btn:hover      { border-color: var(--mid); color: var(--white); }
+    .btn-save       { border-color: var(--dim); color: var(--white); }
+    .btn-save:hover { background: var(--white); color: #000; }
+  </style>
+</head>
+<body>
+
+  <div class="hdr">
+    <div class="hdr-title">FRMCRD</div>
+    <div class="hdr-sub">SHOT DATA GENERATOR</div>
+  </div>
+
+  <div id="drop">
+    <input type="file" id="file-in" accept="image/jpeg,image/jpg,image/png,image/tiff,image/webp">
+    <span class="drop-icon">⊕</span>
+    <div class="drop-lbl">SELECT OR DROP IMAGE</div>
+    <div class="drop-sub">JPEG · PNG · TIFF · WEBP — EXIF EXTRACTED AUTOMATICALLY</div>
+  </div>
+
+  <div id="exif-bar"></div>
+
+  <div id="fields">
+    <div class="row">
+      <div class="fld" style="flex:2">
+        <div class="fld-label-row">
+          <label>PHOTOGRAPHER</label>
+          <span class="fld-badge" id="badge-name">✦ FROM EXIF</span>
+        </div>
+        <input id="inp-name" type="text" placeholder="NAME OR @HANDLE" autocomplete="off">
+      </div>
+      <div class="fld" style="flex:1.5">
+        <div class="fld-label-row">
+          <label>LOCATION</label>
+          <span class="fld-badge" id="badge-loc">✦ RESOLVED</span>
+        </div>
+        <input id="inp-loc" type="text" placeholder="TOKYO, JP" autocomplete="off">
+
+        <!-- GPS source buttons shown after image loads -->
+        <div id="gps-btns">
+          <button class="gps-src-btn" id="btn-exif-gps" style="display:none">⊕ IMAGE GPS</button>
+          <button class="gps-src-btn" id="btn-device-gps">⊕ DEVICE GPS</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Shared confirm / status panel -->
+  <div id="gps-panel">
+    <div class="panel-notice" id="panel-notice"></div>
+    <div class="panel-row" id="panel-action-row">
+      <button class="p-btn confirm" id="btn-panel-ok">RESOLVE LOCATION</button>
+      <button class="p-btn" id="btn-panel-cancel">CANCEL</button>
+    </div>
+    <div id="panel-status"></div>
+  </div>
+
+  <div id="card-wrap">
+    <div id="share-card">
+      <div class="ribbon ribbon-top">
+        <div class="r-ts"  id="d-ts">—</div>
+        <div class="r-loc" id="d-loc">—</div>
+      </div>
+      <img id="card-img" src="" alt="">
+      <div class="ribbon ribbon-bot">
+        <div class="r-specs" id="d-specs"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="actions">
+    <button class="btn" id="btn-reset">↺ RESET</button>
+    <button class="btn btn-save" id="btn-save">↓ SAVE CARD</button>
+  </div>
+
+  <script>
+    const dropEl     = document.getElementById('drop');
+    const fileIn     = document.getElementById('file-in');
+    const exifBar    = document.getElementById('exif-bar');
+    const fieldsEl   = document.getElementById('fields');
+    const gpsBtns    = document.getElementById('gps-btns');
+    const gpsPanel   = document.getElementById('gps-panel');
+    const cardWrap   = document.getElementById('card-wrap');
+    const actionsEl  = document.getElementById('actions');
+    const panelStatus = document.getElementById('panel-status');
+    const panelNotice = document.getElementById('panel-notice');
+    const panelActionRow = document.getElementById('panel-action-row');
+
+    let X = {}, imgW = 0, imgH = 0;
+    let pendingLatLon = null; // { lat, lon } waiting for user confirm
+
+    /* ── Drag & drop ── */
+    dropEl.addEventListener('dragover',  e => { e.preventDefault(); dropEl.classList.add('over'); });
+    dropEl.addEventListener('dragleave', ()  => dropEl.classList.remove('over'));
+    dropEl.addEventListener('drop', e => {
+      e.preventDefault(); dropEl.classList.remove('over');
+      const f = e.dataTransfer.files[0]; if (f) ingest(f);
+    });
+    fileIn.addEventListener('change', e => { if (e.target.files[0]) ingest(e.target.files[0]); });
+    ['inp-name','inp-loc'].forEach(id =>
+      document.getElementById(id).addEventListener('input', render)
+    );
+
+    /* ── Ingest file ── */
+    function ingest(file) {
+      const reader = new FileReader();
+      reader.onload = ev => {
+        const url = ev.target.result;
+        const img = new Image();
+        img.onload = () => {
+          imgW = img.naturalWidth; imgH = img.naturalHeight;
+          document.getElementById('card-img').src = url;
+
+          EXIF.getData(img, function () {
+            const iso = EXIF.getTag(this, 'ISOSpeedRatings');
+            X = {
+              iso    : Array.isArray(iso) ? iso[0] : iso,
+              et     : EXIF.getTag(this, 'ExposureTime'),
+              dt     : EXIF.getTag(this, 'DateTimeOriginal') || EXIF.getTag(this, 'DateTime'),
+              fl     : EXIF.getTag(this, 'FocalLengthIn35mmFilm') || EXIF.getTag(this, 'FocalLength'),
+              ev     : EXIF.getTag(this, 'ExposureBiasValue'),
+              artist : EXIF.getTag(this, 'Artist') || EXIF.getTag(this, 'XPAuthor'),
+              gpsLat : EXIF.getTag(this, 'GPSLatitude'),
+              gpsLatR: EXIF.getTag(this, 'GPSLatitudeRef'),
+              gpsLon : EXIF.getTag(this, 'GPSLongitude'),
+              gpsLonR: EXIF.getTag(this, 'GPSLongitudeRef'),
+            };
+
+            /* Auto-sign from EXIF Artist */
+            if (X.artist && X.artist.trim()) {
+              document.getElementById('inp-name').value = X.artist.trim();
+              document.getElementById('inp-name').classList.add('signed');
+              document.getElementById('badge-name').style.display = 'block';
+            }
+
+            /* Show IMAGE GPS button if EXIF has coordinates */
+            const lat = parseDMS(X.gpsLat, X.gpsLatR);
+            const lon = parseDMS(X.gpsLon, X.gpsLonR);
+            if (lat !== null && lon !== null) {
+              X._lat = lat; X._lon = lon;
+              const btn = document.getElementById('btn-exif-gps');
+              btn.style.display = 'inline-block';
+              btn.title = fmtCoord(lat,'N','S') + ' · ' + fmtCoord(lon,'E','W');
+            }
+
+            buildExifBar();
+            render();
+          });
+
+          dropEl.style.display    = 'none';
+          fieldsEl.style.display  = 'flex';
+          gpsBtns.style.display   = 'flex';
+          cardWrap.style.display  = 'block';
+          actionsEl.style.display = 'flex';
+        };
+        img.src = url;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    /* ── GPS helpers ── */
+    function parseDMS(tag, ref) {
+      if (!tag || !Array.isArray(tag) || tag.length < 3) return null;
+      const toN = v => typeof v === 'object' ? v.numerator / v.denominator : parseFloat(v);
+      const [d, m, s] = tag.map(toN);
+      const dd = d + m / 60 + s / 3600;
+      return isNaN(dd) ? null : (ref === 'S' || ref === 'W' ? -dd : dd);
+    }
+
+    function fmtCoord(v, pos, neg) {
+      return Math.abs(v).toFixed(4) + '° ' + (v >= 0 ? pos : neg);
+    }
+
+    /* ── GPS source buttons ── */
+    document.getElementById('btn-exif-gps').addEventListener('click', () => {
+      openConfirm(X._lat, X._lon, 'EXIF GPS · ' + fmtCoord(X._lat,'N','S') + ' · ' + fmtCoord(X._lon,'E','W'));
+    });
+
+    document.getElementById('btn-device-gps').addEventListener('click', () => {
+      /* Detect file:// protocol — browser blocks geolocation there */
+      if (location.protocol === 'file:') {
+        showPanel(
+          `Browser location access is blocked for local files.<br><br>` +
+          `Serve this file via a local server to enable it:`,
+          `<code>python3 -m http.server 8080</code>` +
+          `Then open <a href="http://localhost:8080" target="_blank">http://localhost:8080</a>`,
+          false /* no action buttons — info only */
+        );
+        return;
+      }
+
+      if (!navigator.geolocation) {
+        showPanelStatus('Geolocation not supported by this browser.');
+        return;
+      }
+
+      showPanelStatus('WAITING FOR DEVICE GPS…');
+
+      navigator.geolocation.getCurrentPosition(
+        pos => {
+          const { latitude: lat, longitude: lon } = pos.coords;
+          openConfirm(lat, lon, 'DEVICE GPS · ' + fmtCoord(lat,'N','S') + ' · ' + fmtCoord(lon,'E','W'));
+        },
+        err => {
+          const msg = err.code === 1 ? 'Location access denied in browser settings.'
+                    : err.code === 2 ? 'Position unavailable.'
+                    : 'Location request timed out.';
+          showPanelStatus(msg);
+        },
+        { timeout: 10000, maximumAge: 60000 }
+      );
+    });
+
+    /* Open the confirmation panel with source info */
+    function openConfirm(lat, lon, sourceLabel) {
+      pendingLatLon = { lat, lon };
+      panelNotice.innerHTML =
+        `<strong style="color:var(--light)">${sourceLabel}</strong><br><br>` +
+        `Coordinates will be sent to ` +
+        `<a href="https://nominatim.openstreetmap.org" target="_blank" rel="noopener">Nominatim</a> ` +
+        `(OpenStreetMap) to look up the place name in local script. ` +
+        `No image data is transmitted.`;
+      panelActionRow.style.display = 'flex';
+      panelStatus.textContent = '';
+      gpsPanel.style.display = 'flex';
+    }
+
+    function showPanel(line1, line2, showActions) {
+      pendingLatLon = null;
+      panelNotice.innerHTML = line1 + (line2 || '');
+      panelActionRow.style.display = showActions ? 'flex' : 'none';
+      panelStatus.textContent = '';
+      gpsPanel.style.display = 'flex';
+    }
+
+    function showPanelStatus(msg) {
+      panelNotice.textContent = '';
+      panelActionRow.style.display = 'none';
+      panelStatus.textContent = msg;
+      gpsPanel.style.display = 'flex';
+    }
+
+    document.getElementById('btn-panel-cancel').addEventListener('click', () => {
+      gpsPanel.style.display = 'none';
+      pendingLatLon = null;
+    });
+
+    document.getElementById('btn-panel-ok').addEventListener('click', async () => {
+      if (!pendingLatLon) return;
+      const { lat, lon } = pendingLatLon;
+      panelActionRow.style.display = 'none';
+      panelNotice.textContent = '';
+      panelStatus.textContent = 'RESOLVING…';
+
+      try {
+        const result = await reverseGeocode(lat, lon);
+        document.getElementById('inp-loc').value = result;
+        document.getElementById('badge-loc').style.display = 'block';
+        panelStatus.textContent = '✦ ' + result;
+        pendingLatLon = null;
+        render();
+      } catch (e) {
+        panelStatus.textContent = 'GEOCODING FAILED — ENTER LOCATION MANUALLY';
+      }
+    });
+
+    async function reverseGeocode(lat, lon) {
+      const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=10&namedetails=1`;
+      const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      const name = data.namedetails?.name
+        || data.address?.city || data.address?.town
+        || data.address?.municipality || data.address?.village
+        || data.address?.county || data.address?.state;
+      const cc = (data.address?.country_code || '').toUpperCase();
+      if (!name && !cc) throw new Error('No result');
+      return [name, cc].filter(Boolean).join(' · ');
+    }
+
+    /* ── EXIF parsers ── */
+    function fracVal(v) {
+      if (v == null) return null;
+      const n = (typeof v === 'object' && 'numerator' in v)
+        ? v.numerator / v.denominator : parseFloat(v);
+      return isNaN(n) ? null : n;
+    }
+    function shutterStr() {
+      const v = fracVal(X.et);
+      if (!v) return null;
+      return v >= 1 ? (v % 1 === 0 ? v : v.toFixed(1)) + 's' : '1/' + Math.round(1 / v);
+    }
+    function focalStr() {
+      const v = fracVal(X.fl); return v ? Math.round(v) + 'mm' : null;
+    }
+    function evStr() {
+      const v = fracVal(X.ev);
+      if (v == null) return null;
+      if (Math.abs(v) < 0.05) return '0EV';
+      return (v > 0 ? '+' : '') + v.toFixed(1) + 'EV';
+    }
+    function tsStr() {
+      if (!X.dt) return null;
+      const [d, t] = X.dt.split(' ');
+      const [y, m, dd] = d.split(':');
+      return y + '.' + m + '.' + dd + (t ? ' · ' + t.slice(0,5) : '');
+    }
+    function gcd(a, b) { return b === 0 ? a : gcd(b, a % b); }
+    function aspectStr() {
+      if (!imgW || !imgH) return null;
+      const g = gcd(imgW, imgH), rw = imgW/g, rh = imgH/g;
+      if (rw <= 30 && rh <= 30) return rw + ':' + rh;
+      const STD = [[1,1],[4,3],[3,4],[3,2],[2,3],[16,9],[9,16],[2,1],[1,2],[6,7],[7,6],[5,4],[4,5]];
+      const ratio = imgW / imgH;
+      let best = STD[0], bestD = Infinity;
+      for (const [w,h] of STD) { const d = Math.abs(ratio - w/h); if (d < bestD) { bestD = d; best = [w,h]; } }
+      return best[0] + ':' + best[1];
+    }
+
+    /* ── EXIF bar ── */
+    function buildExifBar() {
+      const tags = [];
+      if (X.artist) tags.push(['ARTIST', X.artist.trim()]);
+      if (X.iso)    tags.push(['ISO', X.iso]);
+      const s = shutterStr(); if (s) tags.push(['SS', s]);
+      const f = focalStr();   if (f) tags.push(['FL', f]);
+      const e = evStr();      if (e) tags.push(['EV', e]);
+      if (X._lat != null)     tags.push(['GPS', '✦']);
+      if (X.dt)               tags.push(['DATE', tsStr()]);
+
+      exifBar.innerHTML = tags.length
+        ? tags.map(([l,v]) => `<span class="xtag"><b>${l}</b>${v}</span>`).join('')
+        : '<span class="xtag" style="color:#444">NO EXIF DETECTED — ENTER DETAILS BELOW</span>';
+      exifBar.style.display = 'flex';
+    }
+
+    /* ── Render card ── */
+    function render() {
+      document.getElementById('d-ts').textContent = tsStr() || '—';
+
+      const name = document.getElementById('inp-name').value.trim().toUpperCase();
+      const loc  = document.getElementById('inp-loc').value.trim();
+      document.getElementById('d-loc').textContent = name && loc ? name + ' · ' + loc : (name || loc || '—');
+
+      const specs = [aspectStr(), focalStr(), X.iso ? 'ISO ' + X.iso : null, shutterStr(), evStr()].filter(Boolean);
+      document.getElementById('d-specs').innerHTML = specs.length
+        ? specs.map((s,i) => (i > 0 ? '<span class="sep">·</span>' : '') + `<span class="spec">${s}</span>`).join('')
+        : '<span class="spec" style="color:#555">—</span>';
+    }
+
+    /* ── Reset ── */
+    document.getElementById('btn-reset').addEventListener('click', () => {
+      X = {}; imgW = 0; imgH = 0; pendingLatLon = null;
+      fileIn.value = '';
+      document.getElementById('card-img').src = '';
+      document.getElementById('inp-name').value = '';
+      document.getElementById('inp-name').classList.remove('signed');
+      document.getElementById('inp-loc').value = '';
+      document.getElementById('badge-name').style.display = 'none';
+      document.getElementById('badge-loc').style.display = 'none';
+      document.getElementById('btn-exif-gps').style.display = 'none';
+      dropEl.style.display    = '';
+      fieldsEl.style.display  = 'none';
+      gpsBtns.style.display   = 'none';
+      gpsPanel.style.display  = 'none';
+      cardWrap.style.display  = 'none';
+      actionsEl.style.display = 'none';
+      exifBar.style.display   = 'none';
+    });
+
+    /* ── Save ── */
+    document.getElementById('btn-save').addEventListener('click', async () => {
+      try {
+        const canvas = await html2canvas(document.getElementById('share-card'), {
+          scale: 2, backgroundColor: '#000', useCORS: true, allowTaint: true, logging: false
+        });
+        const a = document.createElement('a');
+        a.download = 'frmcrd-' + Date.now() + '.jpg';
+        a.href = canvas.toDataURL('image/jpeg', 0.95);
+        a.click();
+      } catch {
+        alert('Save failed — right-click or long-press the card to save.');
+      }
+    });
+  </script>
+</body>
+</html>
